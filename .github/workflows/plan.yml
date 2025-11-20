@@ -1,4 +1,4 @@
-name: TFC Plan Test
+name: plan
 
 on:
   workflow_dispatch:
