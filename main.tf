@@ -10,22 +10,22 @@ terraform {
 # 1. Random Pet – always recreated on changes
 # ---------------------------------------------------
 resource "random_pet" "pet_name" {
-  length = 5
+  length = 3
 }
 
 # ---------------------------------------------------
 # 2. Random Integer – detectable changes on re-runs
 # ---------------------------------------------------
 resource "random_integer" "number" {
-  min = 11
-  max = 98
+  min = 15
+  max = 95
 }
 
 # ---------------------------------------------------
 # 3. Random String – includes special characters
 # ---------------------------------------------------
 resource "random_string" "token" {
-  length  = 10
+  length  = 5
   special = true
 }
 
@@ -33,7 +33,7 @@ resource "random_string" "token" {
 # 4. Random Shuffle – stable unless inputs change
 # ---------------------------------------------------
 resource "random_shuffle" "colors" {
-  input = ["red", "green", "blue", "yellow", "purple"]
+  input = ["red", "green", "blue", "yellow"]
 }
 
 # ---------------------------------------------------
