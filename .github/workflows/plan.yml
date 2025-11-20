@@ -7,16 +7,16 @@ on:
     paths:
       - "**.tf"
       - ".github/workflows/plan.yml"
-
-
+      
+permissions:
+  actions: read
+  contents: read
+  
 jobs:
   plan:
     runs-on: ubuntu-latest
-    permissions: # ADD THIS SECTION
-      contents: read
-  workflows: write
-
-    steps:
+      
+    steps: # Correctly indented 4 spaces under 'plan:'
       - name: Checkout Repo
         uses: actions/checkout@v3
 
