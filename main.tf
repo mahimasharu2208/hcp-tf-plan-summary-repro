@@ -9,12 +9,12 @@ terraform {
 variable "enable" {
   description = "Toggle resource on/off. Set to true to create, false to destroy."
   type        = bool
-  default     = false
+  default     = true
 }
 
 resource "random_pet" "toggle" {
   count  = var.enable ? 1 : 0
-  length = 2
+  length = 7
 }
 
 output "created_id" {
