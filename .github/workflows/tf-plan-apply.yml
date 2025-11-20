@@ -76,7 +76,6 @@ jobs:
           exit 1
         fi
 
-    ---
 
     - name: 2. ATTEMPT to Fetch Plan Summary IMMEDIATELY (REPLICATION STEP)
       # This step should show the 'null' values, replicating the customer's issue.
@@ -92,7 +91,6 @@ jobs:
           
         echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
 
-    ---
 
     - name: 3. Wait for Plan to Complete
       # Polls the run status until it's finished planning.
@@ -111,7 +109,6 @@ jobs:
           sleep 10
         done
 
-    ---
 
     - name: 4. Fetch Plan Summary AFTER COMPLETION (VERIFY SOLUTION)
       # This fetch should now return the correct counts.
@@ -125,7 +122,6 @@ jobs:
           
         echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
         
-    ---
 
     - name: 5. Perform Apply via API
       # We confirm the plan and trigger the apply.
@@ -138,7 +134,6 @@ jobs:
           --request POST \
           https://app.terraform.io/api/v2/runs/$RUN_ID/actions/apply
 
-    ---
 
     - name: 6. Wait for Apply to Complete
       # Polls the run status until it's finished applying.
@@ -157,7 +152,6 @@ jobs:
           sleep 10
         done
         
-    ---
 
     - name: 7. Fetch Apply Summary (DEMONSTRATE DIFFERENCE)
       # This fetch should correctly return the counts, confirming the customer's observation.
