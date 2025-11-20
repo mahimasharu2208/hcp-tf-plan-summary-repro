@@ -1,99 +1,106 @@
-name: apply
+name: plan
 
 on:
-  workflow_run:
-    workflows: ["plan"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  run-apply:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  run-plan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download plan summary artifact from plan run
-        uses: actions/download-artifact@v4
-        with:
-          name: plan-summary
-          run-id: ${{ github.event.workflow_run.id }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Fetch Latest Run ID from TFC
-        id: fetch_run
+      - name: Create Run in HCP Terraform
+        id: create_run
         run: |
-          RUN_ID=$(curl -s \
-            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
-            "https://app.terraform.io/api/v2/workspaces/${{ secrets.TFC_WORKSPACE_ID }}/runs" \
-            | jq -r '.data[0].id')
+          RUN_PAYLOAD=$(cat <<EOF
+          {
+            "data": {
+              "type": "runs",
+              "attributes": {
+                "message": "Triggered via GitHub Actions",
+                "is-destroy": false
+              },
+              "relationships": {
+                "workspace": {
+                  "data": {
+                    "type": "workspaces",
+                    "id": "${{ secrets.TFC_WORKSPACE_ID }}"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+          )
 
-          echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
-          echo "Latest run: $RUN_ID"
-
-      - name: Trigger Apply
-        id: do_apply
-        run: |
-          RUN_ID=${{ steps.fetch_run.outputs.run-id }}
-
-          echo "Applying run $RUN_ID"
-
-          curl -s \
+          echo "Creating run..."
+          RESPONSE=$(curl -s \
             --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
             --header "Content-Type: application/vnd.api+json" \
             --request POST \
-            --data '{"data":{"type":"run-actions","attributes":{"action":"apply"}}}' \
-            https://app.terraform.io/api/v2/runs/$RUN_ID/actions/apply \
-            > apply_trigger.json
+            --data "$RUN_PAYLOAD" \
+            https://app.terraform.io/api/v2/runs)
 
-          cat apply_trigger.json
+          echo "$RESPONSE" > run.json
 
-      - name: Wait for Apply to Finish
+          RUN_ID=$(jq -r '.data.id' run.json)
+          echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Triggered Run ID: $RUN_ID"
+
+      - name: Wait for Plan to Finish
+        id: wait_plan
         run: |
-          RUN_ID=${{ steps.fetch_run.outputs.run-id }}
+          RUN_ID=${{ steps.create_run.outputs.run-id }}
 
-          echo "Waiting for apply to complete..."
+          echo "Waiting for plan to complete..."
           for i in {1..40}; do
             STATUS=$(curl -s \
               --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
-              https://app.terraform.io/api/v2/runs/$RUN_ID \
-              | jq -r '.data.attributes.status')
+              https://app.terraform.io/api/v2/runs/$RUN_ID | jq -r '.data.attributes.status')
 
             echo "Current status: $STATUS"
 
-            if [[ "$STATUS" == "applied" ]]; then
+            if [[ "$STATUS" == "planned" || "$STATUS" == "planned_and_finished" ]]; then
               break
             fi
 
             if [[ "$STATUS" == "errored" ]]; then
-              echo "Apply failed!"
+              echo "Plan failed!"
               exit 1
             fi
 
             sleep 10
           done
 
-      - name: Fetch Apply Summary
+      - name: Fetch Plan Summary
+        id: plan_summary
         run: |
-          RUN_ID=${{ steps.fetch_run.outputs.run-id }}
+          RUN_ID=${{ steps.create_run.outputs.run-id }}
 
-          APPLY_ID=$(curl -s \
+          PLAN_ID=$(curl -s \
             --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
             https://app.terraform.io/api/v2/runs/$RUN_ID \
-            | jq -r '.data.relationships.apply.data.id')
+            | jq -r '.data.relationships.plan.data.id')
+
+          echo "Plan ID: $PLAN_ID"
 
           curl -s \
             --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
-            https://app.terraform.io/api/v2/applies/$APPLY_ID \
-            | jq '.data.attributes' > apply_summary.json
+            https://app.terraform.io/api/v2/plans/$PLAN_ID \
+            | jq '.data.attributes' > plan_summary.json
 
-          echo "Apply summary:"
-          cat apply_summary.json
+          echo "Plan summary:"
+          cat plan_summary.json
 
-      - name: Upload apply summary
+      - name: Upload summary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: apply-summary
-          path: apply_summary.json
+          name: plan-summary
+          path: plan_summary.json
