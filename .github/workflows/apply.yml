@@ -16,12 +16,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download plan summary artifact
+      - name: Download plan summary artifact from plan run
         uses: actions/download-artifact@v4
         with:
           name: plan-summary
+          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Find Latest Run ID
+      - name: Fetch Latest Run ID from TFC
         id: fetch_run
         run: |
           RUN_ID=$(curl -s \
