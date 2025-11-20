@@ -1,28 +1,32 @@
 name: plan
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
-  plan:
+  run-plan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Create Speculative Plan via API
+      - name: Create Run in HCP Terraform
         id: create_run
         run: |
           RUN_PAYLOAD=$(cat <<EOF
           {
             "data": {
-              "attributes": {
-                "is-speculative": true
-              },
               "type": "runs",
+              "attributes": {
+                "message": "Triggered via GitHub Actions",
+                "is-destroy": false
+              },
               "relationships": {
                 "workspace": {
                   "data": {
@@ -36,6 +40,7 @@ jobs:
           EOF
           )
 
+          echo "Creating run..."
           RESPONSE=$(curl -s \
             --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
             --header "Content-Type: application/vnd.api+json" \
@@ -43,17 +48,60 @@ jobs:
             --data "$RUN_PAYLOAD" \
             https://app.terraform.io/api/v2/runs)
 
-          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          echo "$RESPONSE" > run.json
 
-          RUN_ID=$(echo $RESPONSE | jq -r '.data.id')
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          # extract run ID
+          RUN_ID=$(jq -r '.data.id' run.json)
+          echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Triggered Run ID: $RUN_ID"
+
+      - name: Wait for Plan to Finish
+        id: wait_plan
+        run: |
+          RUN_ID=${{ steps.create_run.outputs.run-id }}
+
+          echo "Waiting for plan to complete..."
+          for i in {1..40}; do
+            STATUS=$(curl -s \
+              --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+              https://app.terraform.io/api/v2/runs/$RUN_ID | jq -r '.data.attributes.status')
+
+            echo "Current status: $STATUS"
+
+            if [[ "$STATUS" == "planned" || "$STATUS" == "planned_and_finished" ]]; then
+              break
+            fi
+
+            if [[ "$STATUS" == "errored" ]]; then
+              echo "Plan failed!"
+              exit 1
+            fi
+
+            sleep 10
+          done
 
       - name: Fetch Plan Summary
-        id: fetch_plan
+        id: plan_summary
         run: |
-          PLAN_ENDPOINT="https://app.terraform.io/api/v2/runs/${{ steps.create_run.outputs.run_id }}/plan"
+          RUN_ID=${{ steps.create_run.outputs.run-id }}
+
+          PLAN_ID=$(curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            https://app.terraform.io/api/v2/runs/$RUN_ID \
+            | jq -r '.data.relationships.plan.data.id')
+
+          echo "Plan ID: $PLAN_ID"
 
           curl -s \
             --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
-            --header "Content-Type: application/vnd.api+json" \
-            $PLAN_ENDPOINT | jq
+            https://app.terraform.io/api/v2/plans/$PLAN_ID \
+            | jq '.data.attributes' > plan_summary.json
+
+          echo "Plan summary:"
+          cat plan_summary.json
+
+      - name: Upload summary artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: plan-summary
+          path: plan_summary.json
