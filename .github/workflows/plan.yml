@@ -1,7 +1,13 @@
 name: Terraform Plan (TFC API)
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.tf"
+      - ".github/workflows/plan.yml"
+
 
 jobs:
   plan:
