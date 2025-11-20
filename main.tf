@@ -1,57 +1,22 @@
 terraform {
   required_providers {
-    random = {
-      source = "hashicorp/random"
+    random = { 
+      source = "hashicorp/random" 
     }
   }
 }
 
-# ---------------------------------------------------
-# 1. Random Pet – always recreated on changes
-# ---------------------------------------------------
-resource "random_pet" "pet_name" {
-  length = 3
+variable "enable" {
+  description = "Toggle resource on/off. Set to true to create, false to destroy."
+  type        = bool
+  default     = true
 }
 
-# ---------------------------------------------------
-# 2. Random Integer – detectable changes on re-runs
-# ---------------------------------------------------
-resource "random_integer" "number" {
-  min = 15
-  max = 95
+resource "random_pet" "toggle" {
+  count  = var.enable ? 1 : 0
+  length = 2
 }
 
-# ---------------------------------------------------
-# 3. Random String – includes special characters
-# ---------------------------------------------------
-resource "random_string" "token" {
-  length  = 5
-  special = true
+output "created_id" {
+  value = length(random_pet.toggle) > 0 ? random_pet.toggle[0].id : "resource absent"
 }
-
-# ---------------------------------------------------
-# 4. Random Shuffle – stable unless inputs change
-# ---------------------------------------------------
-resource "random_shuffle" "colors" {
-  input = ["red", "green", "blue", "yellow"]
-}
-
-# ---------------------------------------------------
-# Outputs – so you can see the values in apply
-# ---------------------------------------------------
-output "pet_name" {
-  value = random_pet.pet_name.id
-}
-
-output "number" {
-  value = random_integer.number.result
-}
-
-output "token" {
-  value = random_string.token.result
-}
-
-output "colors" {
-  value = random_shuffle.colors.result
-}
-
