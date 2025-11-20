@@ -25,16 +25,47 @@ jobs:
     - name: 1. Create a new Run (Plan) via API
       id: create_run
       run: |
-        RUN_ID=$(curl -s \
+        # Define the JSON payload required by the TFC API to create a run in a specific workspace.
+        # Note the use of single quotes for the main JSON string and '"'"' to insert the shell variable safely.
+        RUN_PAYLOAD='{
+          "data": {
+            "attributes": {
+              "is-destroy": false,
+              "message": "Run triggered by GitHub Actions"
+            },
+            "type": "runs",
+            "relationships": {
+              "workspace": {
+                "data": {
+                  "type": "workspaces",
+                  "id": "'"${TFC_WORKSPACE_ID}"'" # CRITICAL: Inserts your Workspace ID
+                }
+              }
+            }
+          }
+        }'
+        
+        # Perform the API call, passing the JSON payload via --data "$RUN_PAYLOAD"
+        RUN_RESPONSE=$(curl -s \
           --header "Authorization: Bearer $TFC_TOKEN" \
           --header "Content-Type: application/vnd.api+json" \
           --request POST \
           https://app.terraform.io/api/v2/runs \
-          --data @- \
-          | jq -r '.data.id')
+          --data "$RUN_PAYLOAD") # <-- Correctly uses the defined payload
+
+        # Extract the Run ID
+        RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
         
         echo "Created Run ID: $RUN_ID"
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        
+        # Check for failure (RUN_ID=null) and print the API error response for debugging
+        if [ "$RUN_ID" = "null" ]; then
+          echo "🚨 ERROR: Failed to create run. Review TFC_TOKEN permissions and ID values."
+          echo "API Error Response:"
+          echo "$RUN_RESPONSE" | jq .
+          exit 1
+        fi
 
     - name: 2. ATTEMPT to Fetch Plan Summary IMMEDIATELY (REPLICATION STEP)
       # This step should show the 'null' values, replicating the customer's issue.
