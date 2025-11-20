@@ -9,17 +9,17 @@ terraform {
 # ---------------------------------------------------
 # 1. Random Pet – always recreated on changes
 # ---------------------------------------------------
-resource "random_pet" "pet_name" {
-  length = 3
-}
+#resource "random_pet" "pet_name" {
+#  length = 3
+#}
 
 # ---------------------------------------------------
 # 2. Random Integer – detectable changes on re-runs
 # ---------------------------------------------------
-resource "random_integer" "number" {
-  min = 15
-  max = 95
-}
+#resource "random_integer" "number" {
+#  min = 15
+#  max = 95
+#}
 
 # ---------------------------------------------------
 # 3. Random String – includes special characters
@@ -39,13 +39,13 @@ resource "random_shuffle" "colors" {
 # ---------------------------------------------------
 # Outputs – so you can see the values in apply
 # ---------------------------------------------------
-output "pet_name" {
-  value = random_pet.pet_name.id
-}
+#output "pet_name" {
+#  value = random_pet.pet_name.id
+#}
 
-output "number" {
-  value = random_integer.number.result
-}
+#output "number" {
+#  value = random_integer.number.result
+#}
 
 output "token" {
   value = random_string.token.result
