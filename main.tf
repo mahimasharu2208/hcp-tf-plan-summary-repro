@@ -9,7 +9,7 @@ terraform {
 variable "enable" {
   description = "Toggle resource on/off. Set to true to create, false to destroy."
   type        = bool
-  default     = false
+  default     = true
 }
 
 resource "random_pet" "toggle" {
