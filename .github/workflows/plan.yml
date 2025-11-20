@@ -94,6 +94,6 @@ jobs:
 
       - name: Trigger Apply Workflow
         if: steps.wait_plan.outputs.final_status == 'planned'
-        uses: peter-evans/workflow-dispatch@v2
+        uses: peter-evans/workflow-dispatch@v1
         with:
           workflow: apply.yml
