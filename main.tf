@@ -4,6 +4,13 @@ terraform {
       source = "hashicorp/random" 
     }
   }
+
+  cloud { 
+    organization = "mahima-test" 
+    workspaces { 
+      name = "github-actions-test" 
+    } 
+  } 
 }
 
 variable "enable" {
