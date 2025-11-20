@@ -1,0 +1,54 @@
+name: Terraform Apply (TFC API)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create Apply Run
+        id: create_apply
+        run: |
+          echo "Creating APPLY run..."
+
+          RUN_RESPONSE=$(curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --request POST \
+            --data "{
+              \"data\": {
+                \"attributes\": {
+                  \"message\": \"GitHub Actions Apply\"
+                },
+                \"type\": \"runs\",
+                \"relationships\": {
+                  \"workspace\": {
+                    \"data\": {
+                      \"type\": \"workspaces\",
+                      \"name\": \"${{ secrets.TFC_WORKSPACE_ID }}\",
+                      \"organization\": \"${{ secrets.TFC_ORG }}\"
+                    }
+                  }
+                }
+              }
+            }" \
+            https://app.terraform.io/api/v2/runs)
+
+          RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
+          echo "Run ID: $RUN_ID"
+
+      - name: Wait for Apply Completion
+        run: |
+          RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
+          STATUS="pending"
+
+          while [ "$STATUS" != "applied" ] && [ "$STATUS" != "errored" ] && [ "$STATUS" != "canceled" ]; do
+            sleep 5
+            STATUS=$(curl -s \
+              --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+              https://app.terraform.io/api/v2/runs/$RUN_ID |
+              jq -r '.data.attributes.status')
+            echo "Current Status: $STATUS"
+          done
