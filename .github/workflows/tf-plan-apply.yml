@@ -14,9 +14,9 @@ jobs:
   terraform_plan_apply:
     runs-on: ubuntu-latest
     env:
-      TFC_ORG: your-hcp-org-id  # **CHANGE THIS**
-      TFC_WORKSPACE_ID: ws-xxxxxxxxxxxxxxx # **CHANGE THIS**
-      TFC_TOKEN: ${{ secrets.TFC_API_TOKEN }} # Secret holding your API Token
+      TFC_ORG: ${{ secrets.TFC_ORG }}  # **CHANGE THIS**
+      TFC_WORKSPACE_ID: ${{ secrets.TFC_WORKSPACE_ID }} # **CHANGE THIS**
+      TFC_TOKEN: ${{ secrets.TFC_TOKEN }} # Secret holding your API Token
       
     steps:
     - name: Checkout repository
