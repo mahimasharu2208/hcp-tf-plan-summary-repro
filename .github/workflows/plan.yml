@@ -12,6 +12,9 @@ on:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions: # ADD THIS SECTION
+      contents: read
+  workflows: write
 
     steps:
       - name: Checkout Repo
