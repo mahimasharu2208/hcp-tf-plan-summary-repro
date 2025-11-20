@@ -14,9 +14,10 @@ jobs:
   terraform_plan_apply:
     runs-on: ubuntu-latest
     env:
-      TFC_ORG: ${{ secrets.TFC_ORG }}  # **CHANGE THIS**
-      TFC_WORKSPACE_ID: ${{ secrets.TFC_WORKSPACE_ID }} # **CHANGE THIS**
-      TFC_TOKEN: ${{ secrets.TFC_TOKEN }} # Secret holding your API Token
+      # Ensure TFC_ORG, TFC_WORKSPACE_ID, and TFC_TOKEN are correctly set as Repository Secrets
+      TFC_ORG: ${{ secrets.TFC_ORG }} 
+      TFC_WORKSPACE_ID: ${{ secrets.TFC_WORKSPACE_ID }}
+      TFC_TOKEN: ${{ secrets.TFC_TOKEN }}
       
     steps:
     - name: Checkout repository
@@ -25,47 +26,57 @@ jobs:
     - name: 1. Create a new Run (Plan) via API
       id: create_run
       run: |
-        # Define the JSON payload required by the TFC API to create a run in a specific workspace.
-        # Note the use of single quotes for the main JSON string and '"'"' to insert the shell variable safely.
-        RUN_PAYLOAD='{
-          "data": {
-            "attributes": {
-              "is-destroy": false,
-              "message": "Run triggered by GitHub Actions"
-            },
-            "type": "runs",
-            "relationships": {
-              "workspace": {
-                "data": {
-                  "type": "workspaces",
-                  "id": "'"${TFC_WORKSPACE_ID}"'" # CRITICAL: Inserts your Workspace ID
+        # 1. Define variables for cleaner payload construction
+        WORKSPACE_ID="$TFC_WORKSPACE_ID"
+        MESSAGE="Run triggered by GitHub Actions replication workflow"
+
+        # 2. Use 'jq' to build the JSON payload safely, avoiding shell quoting errors.
+        RUN_PAYLOAD=$(jq -n \
+          --arg ws_id "$WORKSPACE_ID" \
+          --arg msg "$MESSAGE" \
+          '{
+            "data": {
+              "attributes": {
+                "is-destroy": false,
+                "message": $msg
+              },
+              "type": "runs",
+              "relationships": {
+                "workspace": {
+                  "data": {
+                    "type": "workspaces",
+                    "id": $ws_id # jq safely inserts the workspace ID here
+                  }
                 }
               }
             }
-          }
-        }'
-        
-        # Perform the API call, passing the JSON payload via --data "$RUN_PAYLOAD"
+          }')
+
+        # 3. Perform the API call with the safely constructed payload
         RUN_RESPONSE=$(curl -s \
           --header "Authorization: Bearer $TFC_TOKEN" \
           --header "Content-Type: application/vnd.api+json" \
           --request POST \
           https://app.terraform.io/api/v2/runs \
-          --data "$RUN_PAYLOAD") # <-- Correctly uses the defined payload
+          --data "$RUN_PAYLOAD") 
 
-        # Extract the Run ID
+        # 4. Extract the Run ID
         RUN_ID=$(echo "$RUN_RESPONSE" | jq -r '.data.id')
         
         echo "Created Run ID: $RUN_ID"
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         
-        # Check for failure (RUN_ID=null) and print the API error response for debugging
+        # 5. Check for failure and print API error response
         if [ "$RUN_ID" = "null" ]; then
-          echo "🚨 ERROR: Failed to create run. Review TFC_TOKEN permissions and ID values."
+          echo "🚨 ERROR: Failed to create run. Check TFC Token permissions and ID values."
           echo "API Error Response:"
           echo "$RUN_RESPONSE" | jq .
+          echo "JSON Payload Sent was:"
+          echo "$RUN_PAYLOAD"
           exit 1
         fi
+
+    ---
 
     - name: 2. ATTEMPT to Fetch Plan Summary IMMEDIATELY (REPLICATION STEP)
       # This step should show the 'null' values, replicating the customer's issue.
@@ -80,6 +91,8 @@ jobs:
           | jq '.data.attributes')
           
         echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
+
+    ---
 
     - name: 3. Wait for Plan to Complete
       # Polls the run status until it's finished planning.
@@ -98,6 +111,8 @@ jobs:
           sleep 10
         done
 
+    ---
+
     - name: 4. Fetch Plan Summary AFTER COMPLETION (VERIFY SOLUTION)
       # This fetch should now return the correct counts.
       run: |
@@ -110,6 +125,8 @@ jobs:
           
         echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
         
+    ---
+
     - name: 5. Perform Apply via API
       # We confirm the plan and trigger the apply.
       run: |
@@ -120,6 +137,8 @@ jobs:
           --header "Content-Type: application/vnd.api+json" \
           --request POST \
           https://app.terraform.io/api/v2/runs/$RUN_ID/actions/apply
+
+    ---
 
     - name: 6. Wait for Apply to Complete
       # Polls the run status until it's finished applying.
@@ -138,6 +157,8 @@ jobs:
           sleep 10
         done
         
+    ---
+
     - name: 7. Fetch Apply Summary (DEMONSTRATE DIFFERENCE)
       # This fetch should correctly return the counts, confirming the customer's observation.
       run: |
@@ -149,3 +170,4 @@ jobs:
           | jq '.data.attributes')
           
         echo "$APPLY_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
+      
