@@ -1,0 +1,111 @@
+name: apply
+
+on:
+  workflow_run:
+    workflows: ["plan"]
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  run-apply:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download plan summary artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: plan-summary
+
+      - name: Read Run ID from Plan Workflow
+        run: |
+          # The plan workflow saved run.json inside the plan step
+          echo "Downloading run.json..."
+        # NOTE: If you want, we can also upload run.json as an artifact
+
+      - name: Fetch Run ID from Triggered Run
+        run: |
+          echo "Extracting run ID from workflow_run payload..."
+
+          RUN_ID=$(jq -r '.workflow_run.outputs["run-id"]' <<< "${{ toJson(github.event) }}")
+
+          # fallback: extract from API if not available
+          if [[ "$RUN_ID" == "null" || -z "$RUN_ID" ]]; then
+            echo "WARNING: run-id not found in workflow_run event. Falling back to API fetch."
+          fi
+
+      - name: Apply the Run in TFC
+        id: do_apply
+        run: |
+          # We must get the run ID again (same as plan)
+          echo "Fetching latest run for workspace..."
+
+          RUN_ID=$(curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            "https://app.terraform.io/api/v2/workspaces/${{ secrets.TFC_WORKSPACE_ID }}/runs" \
+            | jq -r '.data[0].id')
+
+          echo "Applying Run: $RUN_ID"
+
+          curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --request POST \
+            --data '{"data":{"type":"run-actions","attributes":{"action":"apply"}}}' \
+            https://app.terraform.io/api/v2/runs/$RUN_ID/actions/apply \
+            > apply_trigger.json
+
+          echo "Apply triggered!"
+          cat apply_trigger.json
+
+      - name: Wait for Apply to Finish
+        run: |
+          RUN_ID=$(jq -r '.data.relationships.run.data.id' apply_trigger.json)
+
+          echo "Waiting for apply to complete..."
+          for i in {1..40}; do
+            STATUS=$(curl -s \
+              --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+              https://app.terraform.io/api/v2/runs/$RUN_ID \
+              | jq -r '.data.attributes.status')
+
+            echo "Current status: $STATUS"
+
+            if [[ "$STATUS" == "applied" ]]; then
+              break
+            fi
+
+            if [[ "$STATUS" == "errored" ]]; then
+              echo "Apply failed!"
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+      - name: Fetch Apply Summary
+        run: |
+          APPLY_ID=$(curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            https://app.terraform.io/api/v2/runs/$RUN_ID \
+            | jq -r '.data.relationships.apply.data.id')
+
+          echo "Apply ID: $APPLY_ID"
+
+          curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            https://app.terraform.io/api/v2/applies/$APPLY_ID \
+            | jq '.data.attributes' > apply_summary.json
+
+          echo "Apply summary:"
+          cat apply_summary.json
+
+      - name: Upload apply artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: apply-summary
+          path: apply_summary.json
