@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Create Run in HCP Terraform
         id: create_run
@@ -50,7 +50,6 @@ jobs:
 
           echo "$RESPONSE" > run.json
 
-          # extract run ID
           RUN_ID=$(jq -r '.data.id' run.json)
           echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
           echo "Triggered Run ID: $RUN_ID"
@@ -101,7 +100,7 @@ jobs:
           cat plan_summary.json
 
       - name: Upload summary artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: plan-summary
           path: plan_summary.json
