@@ -1,0 +1,59 @@
+name: TFC Plan Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Speculative Plan via API
+        id: create_run
+        run: |
+          RUN_PAYLOAD=$(cat <<EOF
+          {
+            "data": {
+              "attributes": {
+                "is-speculative": true
+              },
+              "type": "runs",
+              "relationships": {
+                "workspace": {
+                  "data": {
+                    "type": "workspaces",
+                    "id": "${{ secrets.TFC_WORKSPACE_ID }}"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+          )
+
+          RESPONSE=$(curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --request POST \
+            --data "$RUN_PAYLOAD" \
+            https://app.terraform.io/api/v2/runs)
+
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+          RUN_ID=$(echo $RESPONSE | jq -r '.data.id')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Fetch Plan Summary
+        id: fetch_plan
+        run: |
+          PLAN_ENDPOINT="https://app.terraform.io/api/v2/runs/${{ steps.create_run.outputs.run_id }}/plan"
+
+          curl -s \
+            --header "Authorization: Bearer ${{ secrets.TFC_TOKEN }}" \
+            --header "Content-Type: application/vnd.api+json" \
+            $PLAN_ENDPOINT | jq
