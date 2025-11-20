@@ -1,0 +1,120 @@
+# .github/workflows/tf-plan-apply.yml
+
+name: 'HCP Terraform Plan & Apply Replication'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'main.tf'
+  workflow_dispatch:
+
+jobs:
+  terraform_plan_apply:
+    runs-on: ubuntu-latest
+    env:
+      TFC_ORG: your-hcp-org-id  # **CHANGE THIS**
+      TFC_WORKSPACE_ID: ws-xxxxxxxxxxxxxxx # **CHANGE THIS**
+      TFC_TOKEN: ${{ secrets.TFC_API_TOKEN }} # Secret holding your API Token
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 1. Create a new Run (Plan) via API
+      id: create_run
+      run: |
+        RUN_ID=$(curl -s \
+          --header "Authorization: Bearer $TFC_TOKEN" \
+          --header "Content-Type: application/vnd.api+json" \
+          --request POST \
+          https://app.terraform.io/api/v2/runs \
+          --data @- \
+          | jq -r '.data.id')
+        
+        echo "Created Run ID: $RUN_ID"
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+
+    - name: 2. ATTEMPT to Fetch Plan Summary IMMEDIATELY (REPLICATION STEP)
+      # This step should show the 'null' values, replicating the customer's issue.
+      id: quick_fetch
+      continue-on-error: true
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        echo "--- 2. Quick Plan Fetch Attempt (EXPECT NULLS) ---"
+        PLAN_ATTRIBUTES=$(curl -s \
+          --header "Authorization: Bearer $TFC_TOKEN" \
+          https://app.terraform.io/api/v2/runs/$RUN_ID/plan \
+          | jq '.data.attributes')
+          
+        echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
+
+    - name: 3. Wait for Plan to Complete
+      # Polls the run status until it's finished planning.
+      id: wait_plan
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        while true; do
+          STATUS=$(curl -s \
+            --header "Authorization: Bearer $TFC_TOKEN" \
+            https://app.terraform.io/api/v2/runs/$RUN_ID \
+            | jq -r '.data.attributes.status')
+          echo "Current Run Status: $STATUS"
+          if [[ "$STATUS" == "planned" || "$STATUS" == "errored" || "$STATUS" == "discarded" ]]; then
+            break
+          fi
+          sleep 10
+        done
+
+    - name: 4. Fetch Plan Summary AFTER COMPLETION (VERIFY SOLUTION)
+      # This fetch should now return the correct counts.
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        echo "--- 4. Final Plan Fetch After Completion (EXPECT COUNTS) ---"
+        PLAN_ATTRIBUTES=$(curl -s \
+          --header "Authorization: Bearer $TFC_TOKEN" \
+          https://app.terraform.io/api/v2/runs/$RUN_ID/plan \
+          | jq '.data.attributes')
+          
+        echo "$PLAN_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
+        
+    - name: 5. Perform Apply via API
+      # We confirm the plan and trigger the apply.
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        echo "--- 5. Applying Run $RUN_ID ---"
+        curl -s \
+          --header "Authorization: Bearer $TFC_TOKEN" \
+          --header "Content-Type: application/vnd.api+json" \
+          --request POST \
+          https://app.terraform.io/api/v2/runs/$RUN_ID/actions/apply
+
+    - name: 6. Wait for Apply to Complete
+      # Polls the run status until it's finished applying.
+      id: wait_apply
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        while true; do
+          STATUS=$(curl -s \
+            --header "Authorization: Bearer $TFC_TOKEN" \
+            https://app.terraform.io/api/v2/runs/$RUN_ID \
+            | jq -r '.data.attributes.status')
+          echo "Current Run Status: $STATUS"
+          if [[ "$STATUS" == "applied" || "$STATUS" == "errored" || "$STATUS" == "discarded" ]]; then
+            break
+          fi
+          sleep 10
+        done
+        
+    - name: 7. Fetch Apply Summary (DEMONSTRATE DIFFERENCE)
+      # This fetch should correctly return the counts, confirming the customer's observation.
+      run: |
+        RUN_ID=${{ steps.create_run.outputs.run_id }}
+        echo "--- 7. Final Apply Fetch (EXPECT COUNTS) ---"
+        APPLY_ATTRIBUTES=$(curl -s \
+          --header "Authorization: Bearer $TFC_TOKEN" \
+          https://app.terraform.io/api/v2/runs/$RUN_ID/apply \
+          | jq '.data.attributes')
+          
+        echo "$APPLY_ATTRIBUTES" | jq '."resource-additions", ."resource-changes", ."resource-destructions"'
